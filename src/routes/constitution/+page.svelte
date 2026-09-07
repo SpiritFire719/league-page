@@ -7,6 +7,7 @@
     let five, fiveOne;
     let six, sixOne, sixTwo;
     let seven, sevenOne, sevenTwo, sevenThree;
+    let eight, eightOne, eightTwo, eightThree;
 
     const goToSection = (section) => {
         const top = section.getBoundingClientRect().top + window.pageYOffset;
@@ -134,8 +135,14 @@
         <h4 class="noUnderscore clickable" onclick={() => goToSection(sevenOne)}>7.1 League Dues</h4>
         <h4 class="noUnderscore clickable" onclick={() => goToSection(sevenTwo)}>7.2 Payout</h4>
         <h4 class="noUnderscore clickable" onclick={() => goToSection(sevenThree)}>7.3 Raising Dues</h4>
-    
-    
+
+    <h3 class="noUnderscore clickable" onclick={() => goToSection(eight)}>Section 8: League Punishment</h3>
+
+        <h4 class="noUnderscore clickable" onclick={() => goToSection(eightOne)}>8.1 League Punishment</h4>
+        <h4 class="noUnderscore clickable" onclick={() => goToSection(eightTwo)}>8.2 Punishment Fulfilment</h4>
+        <h4 class="noUnderscore clickable" onclick={() => goToSection(eightThree)}>8.3 Punishments</h4>
+
+
     <hr />
     
     <h2 class="sectionHeading" bind:this={one}>Section 1 Roster Breakdown</h2>
@@ -276,5 +283,23 @@
 
     <h3 bind:this={sevenThree}>7.3 Raising Dues</h3>
     <p>Raising league dues will require a unanimous vote. In the event that a manager is no longer financially comfortable with the buy in, please reach out to the commissioner or bring up a league wide vote to reduce the buy in prior to the season start.</p>
+
+    <h2 class="sectionHeading" bind:this={eight}>Section 8 League Punishment</h2>
+
+    <h3 bind:this={eightOne}>8.1 League Punishment</h3>
+    <p>League punishment must be designated prior to the start of the season.</p>
+    <p>No league punishment ideas will result in the default punishment of pie to the face by league members at a designated time/location.</p>
+
+    <h3 bind:this={eightTwo}>8.2 Punishment Fulfilment</h3>
+    <p>League punishment must be fulfilled between the conclusion of the fantasy season and the start of the following season.</p>
+    <p>Any league punishment that has not been fulfilled may result in a removal from the league.</p>
+    <p>Special consideration will be granted to the loser of the league if circumstances do not permit the manager to fulfill their punishment due to health, financial, or family situations, under the commissioner's discretion.</p>
+
+    <h3 bind:this={eightThree}>8.3 Punishments</h3>
+    <p>No physical or financial harm is to be done to the manager in the name of punishment.</p>
+    <p>No permanent marks of any kind (tattoos) are to be considered a league punishment.</p>
+    <p>Punishments should be lighthearted but humiliating and embarrassing in nature - this is a league to have fun, keep the punishments fun (for the rest of the league).</p>
+    <p>By participating in this league, every manager is agreeing to the punishment agreed upon by the league.</p>
+    <p>Any punishment suggestion will need unanimous agreement.</p>
 
 </div>
