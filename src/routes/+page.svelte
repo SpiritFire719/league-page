@@ -1,12 +1,16 @@
 <script>
 	import LinearProgress from '@smui/linear-progress';
-	import { getNflState, leagueName, getAwards, getLeagueTeamManagers, homepageText, managers, gotoManager, enableBlog, waitForAll } from '$lib/utils/helper';
+	import { getNflState, leagueName, getAwards, getLeagueTeamManagers, weeklyRecaps, managers, gotoManager, enableBlog, waitForAll } from '$lib/utils/helper';
 	import { Transactions, PowerRankings, HomePost} from '$lib/components';
+	import WelcomeModal from '$lib/WelcomeModal.svelte';
 	import { getAvatarFromTeamManagers, getTeamFromTeamManagers } from '$lib/utils/helperFunctions/universalFunctions';
 
     const nflState = getNflState();
     const podiumsData = getAwards();
     const leagueTeamManagersData = getLeagueTeamManagers();
+
+    const latestRecap = weeklyRecaps.length ? weeklyRecaps[weeklyRecaps.length - 1] : null;
+    const pastRecaps = weeklyRecaps.length > 1 ? [...weeklyRecaps].slice(0, -1).reverse() : [];
 </script>
 
 <style>
@@ -67,6 +71,52 @@
 
     h6 {
         text-align: center;
+    }
+
+    .recapCard {
+        background-color: var(--fff);
+        border-radius: 8px;
+        box-shadow: 0 0 8px 0 var(--boxShadowOne);
+        padding: 1.2em 1.6em;
+        margin: 0 0 1em;
+    }
+
+    .recapTitle {
+        margin: 0 0 0.5em;
+        color: var(--blueOne);
+    }
+
+    .pastRecaps {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6em;
+        margin: 0 0 1.5em;
+    }
+
+    .pastRecaps summary {
+        cursor: pointer;
+        font-weight: bold;
+        color: var(--blueOne);
+        padding: 0.6em 1em;
+        background-color: var(--fff);
+        border-radius: 8px;
+        box-shadow: 0 0 8px 0 var(--boxShadowOne);
+    }
+
+    .pastRecaps details[open] summary {
+        border-radius: 8px 8px 0 0;
+    }
+
+    .pastRecaps .recapContent {
+        padding: 1em 1.6em;
+        background-color: var(--fff);
+        border-radius: 0 0 8px 8px;
+        box-shadow: 0 0 8px 0 var(--boxShadowOne);
+    }
+
+    .noRecaps {
+        text-align: center;
+        color: var(--g555);
     }
 
     .homeBanner {
@@ -136,12 +186,31 @@
 	}
 </style>
 
+<WelcomeModal />
+
 <div id="home">
     <div id="main">
         <div class="text">
             <h6>{leagueName}</h6>
-            <!-- homepageText contains the intro text for your league, this gets edited in /src/lib/utils/leagueInfo.js -->
-            {@html homepageText }
+            <!-- Weekly recaps are edited in /src/lib/utils/leagueInfo.js -->
+            {#if latestRecap}
+                <div class="recapCard">
+                    <h3 class="recapTitle">{latestRecap.title}</h3>
+                    {@html latestRecap.text}
+                </div>
+                {#if pastRecaps.length}
+                    <div class="pastRecaps">
+                        {#each pastRecaps as recap}
+                            <details>
+                                <summary>{recap.title}</summary>
+                                <div class="recapContent">{@html recap.text}</div>
+                            </details>
+                        {/each}
+                    </div>
+                {/if}
+            {:else}
+                <p class="noRecaps">No weekly recaps yet. Check back after Week 1!</p>
+            {/if}
             <!-- Most recent Blog Post (if enabled) -->
             {#if enableBlog}
                 <HomePost />

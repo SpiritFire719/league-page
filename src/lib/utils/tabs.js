@@ -26,11 +26,22 @@ export const tabs = [
         key: 'blog',
     },
     {
+        icon: 'event',
+        label: 'Events',
+        dest: '/events',
+        key: 'events',
+    },
+    {
         icon: 'view_comfy',
         label: 'League Info',
         nest: true,
         key: 'league_info',
         children: [
+            {
+                icon: 'campaign',
+                label: 'Welcome Message',
+                dest: '/welcome',
+            },
             {
                 icon: 'storage',
                 label: 'Rosters',
@@ -77,11 +88,5 @@ export const tabs = [
                 dest: `https://sleeper.app/leagues/${leagueID}`,
             },
         ]
-    },
-    {
-        icon: 'lightbulb',
-        label: 'Resources',
-        dest: '/resources',
-        key: 'resources',
     },
 ];
