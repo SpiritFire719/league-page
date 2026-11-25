@@ -83,7 +83,7 @@ export const getManagerStats = async () => {
 		} else if(t.type == 'waiver' || t.type == 'free_agent') {
 			for(const rosterID of Object.values(t.adds || {})) {
 				for(const uid of managersOf(season, rosterID)) {
-					events.push({ uid, season, leg: t.leg, kind: t.type });
+					events.push({ uid, season, leg: t.leg, kind: t.type, bid: t.type == 'waiver' ? (t.settings?.waiver_bid || 0) : 0 });
 				}
 			}
 		}
@@ -102,6 +102,26 @@ export const getManagerStats = async () => {
 				breakdown[kind] = seasons.reduce((total, s) => total + count(s, [kind]), 0);
 			}
 
+			// FAAB dollars spent on winning waiver claims (free-agent adds don't carry a bid)
+			const spend = (season, maxLeg = 99) =>
+				events.filter((e) => e.uid == uid && e.season == season && e.kind == 'waiver' && e.leg <= maxLeg)
+					.reduce((total, e) => total + e.bid, 0);
+			const faab = {
+				thisSeason: seasons.includes(currentSeason) ? spend(currentSeason) : null,
+				histAvgFull: history.length ? mean(history.map((s) => spend(s))) : null,
+				histAvgThru: history.length ? mean(history.map((s) => spend(s, txnThrough))) : null,
+			};
+			faab.pace = faab.thisSeason != null && faab.histAvgThru ? faab.thisSeason / faab.histAvgThru - 1 : null;
+
+			// this season and past same-week average for each kind on its own (waiver claims vs free-agent adds)
+			const byKind = {};
+			for(const kind of kinds) {
+				byKind[kind] = {
+					thisSeason: seasons.includes(currentSeason) ? count(currentSeason, [kind]) : null,
+					histAvgThru: history.length ? mean(history.map((s) => count(s, [kind], txnThrough))) : null,
+				};
+			}
+
 			const thisSeason = seasons.includes(currentSeason) ? count(currentSeason) : null;
 			const histAvgFull = history.length ? mean(history.map((s) => count(s))) : null;
 			const histAvgThru = history.length ? mean(history.map((s) => count(s, kinds, txnThrough))) : null;
@@ -114,6 +134,8 @@ export const getManagerStats = async () => {
 				seasons: seasons.length,
 				career: seasons.reduce((total, s) => total + count(s), 0),
 				breakdown,
+				byKind,
+				faab,
 				thisSeason,
 				histAvgFull,
 				histAvgThru,
@@ -130,6 +152,14 @@ export const getManagerStats = async () => {
 		leagueData, leagueTeamManagers, currentSeason, leagueComplete, nflState,
 		transactions: completed.filter((t) => t.league_id == leagueData.league_id),
 	});
+
+	// FAAB efficiency: this season's waiver-acquired starter points per FAAB dollar spent
+	for(const row of pickups) {
+		const rosterID = Object.keys(teamManagersMap[currentSeason] ?? {}).find((rid) => managersOf(currentSeason, rid).includes(row.managerID));
+		const pointsRow = points.find((p) => p.rosterID == rosterID);
+		row.faab.waiverPoints = pointsRow ? pointsRow.waiver : null;
+		row.faab.pointsPerDollar = pointsRow && row.faab.thisSeason > 0 ? pointsRow.waiver / row.faab.thisSeason : null;
+	}
 
 	const response = { currentSeason, seasons: Object.keys(teamManagersMap).map(Number).sort(), txnThrough, pointsThrough, draftMissing, pickups, trades, points };
 	managerStatsStore.update(() => response);

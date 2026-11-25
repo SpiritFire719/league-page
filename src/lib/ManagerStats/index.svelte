@@ -1,6 +1,7 @@
 <script>
     import { leagueName, gotoManager, getTeamFromTeamManagers } from '$lib/utils/helper';
     import DataTable, { Head, Body, Row, Cell } from '@smui/data-table';
+    import SortHeader from './SortHeader.svelte';
 
     export let stats, leagueTeamManagers, playersInfo;
 
@@ -9,6 +10,11 @@
 
     const fmt = (n, digits = 1) => (Number.isFinite(n) ? n.toFixed(digits) : '-');
     const pace = (p) => (p == null ? '-' : `${p >= 0 ? '+' : ''}${fmt(p * 100, 0)}%`);
+    const money = (n, digits = 0) => (Number.isFinite(n) ? `$${n.toFixed(digits)}` : '-');
+
+    // base order for the FAAB table: biggest spenders first, so managers with no points-per-dollar
+    // value keep a sensible order when sorting by it
+    const faabRows = [...pickups].sort((a, b) => (b.faab.thisSeason ?? -1) - (a.faab.thisSeason ?? -1));
     const pct = (part, total) => (total ? `${fmt((part / total) * 100, 0)}%` : '-');
 
     const playerName = (pid) => {
@@ -24,6 +30,73 @@
         if(waiver && free_agent) return waiver.points >= free_agent.points ? waiver : free_agent;
         return waiver || free_agent;
     };
+
+    // ---- sorting ----
+    // Each table has a map of column key -> the value to sort on (null/NaN always sorts last).
+    const teamName = (rosterID) => getTeamFromTeamManagers(leagueTeamManagers, rosterID).name;
+    const share = (part, total) => (total ? part / total : null);
+
+    const columns = {
+        pickups: {
+            manager: (r) => r.name, seasons: (r) => r.seasons, career: (r) => r.career,
+            waiver: (r) => r.breakdown.waiver, fa: (r) => r.breakdown.free_agent,
+            avg: (r) => r.histAvgFull, thru: (r) => r.histAvgThru, cur: (r) => r.thisSeason, pace: (r) => r.pace,
+            curWaiver: (r) => r.byKind.waiver.thisSeason, curFA: (r) => r.byKind.free_agent.thisSeason,
+            thruWaiver: (r) => r.byKind.waiver.histAvgThru,
+        },
+        faab: {
+            manager: (r) => r.name, spent: (r) => r.faab.thisSeason, avg: (r) => r.faab.histAvgFull,
+            thru: (r) => r.faab.histAvgThru, pace: (r) => r.faab.pace,
+            wpts: (r) => r.faab.waiverPoints, ppd: (r) => r.faab.pointsPerDollar,
+        },
+        trades: {
+            manager: (r) => r.name, seasons: (r) => r.seasons, career: (r) => r.career,
+            avg: (r) => r.histAvgFull, thru: (r) => r.histAvgThru, cur: (r) => r.thisSeason, pace: (r) => r.pace,
+        },
+        points: {
+            team: (r) => teamName(r.rosterID), draft: (r) => r.draft, waiver: (r) => r.waiver,
+            free_agent: (r) => r.free_agent, trade: (r) => r.trade, other: (r) => r.other, total: (r) => r.total,
+            draftPct: (r) => share(r.draft, r.total), waiverFAPct: (r) => share(r.waiver + r.free_agent, r.total),
+            tradePct: (r) => share(r.trade, r.total),
+        },
+        best: {
+            team: (r) => teamName(r.rosterID), draft: (r) => r.best.draft?.points,
+            waiverFA: (r) => bestWaiverOrFA(r)?.points, trade: (r) => r.best.trade?.points,
+        },
+    };
+
+    // dir: -1 = high to low, 1 = low to high. A null key keeps the table's original order.
+    let sorts = {
+        pickups: { key: 'career', dir: -1 },
+        faab: { key: 'ppd', dir: -1 },
+        trades: { key: 'career', dir: -1 },
+        points: { key: 'total', dir: -1 },
+        best: { key: null, dir: -1 },
+    };
+
+    // names read A-Z first, numbers high-to-low first; clicking the active column flips it
+    const setSort = (table, key) => {
+        const current = sorts[table];
+        const dir = current.key == key ? -current.dir : (key == 'manager' || key == 'team' ? 1 : -1);
+        sorts[table] = { key, dir };
+    };
+
+    const sortRows = (rows, accessors, { key, dir }) => {
+        if(!key) return rows;
+        const get = accessors[key];
+        return [...rows].sort((a, b) => {
+            const x = get(a), y = get(b);
+            const xMissing = x == null || Number.isNaN(x), yMissing = y == null || Number.isNaN(y);
+            if(xMissing || yMissing) return xMissing == yMissing ? 0 : (xMissing ? 1 : -1);
+            return typeof x == 'string' ? dir * x.localeCompare(y) : dir * (x - y);
+        });
+    };
+
+    $: sortedPickups = sortRows(pickups, columns.pickups, sorts.pickups);
+    $: sortedFaab = sortRows(faabRows, columns.faab, sorts.faab);
+    $: sortedTrades = sortRows(trades, columns.trades, sorts.trades);
+    $: sortedPoints = sortRows(points, columns.points, sorts.points);
+    $: sortedBest = sortRows(points, columns.best, sorts.best);
 </script>
 
 <style>
@@ -117,7 +190,7 @@
 <h1>{leagueName} Manager Stats</h1>
 <p class="intro">
     How active each manager is on the waiver wire and in the trade market, and where this season's
-    starting lineup points really came from. Seasons shown: {stats.seasons[0]}&ndash;{currentSeason}.
+    starting lineup points really came from. Seasons shown: {stats.seasons[0]}&ndash;{currentSeason}. Click any column heading to sort.
 </p>
 
 <!-- ============================== PICKUPS ============================== -->
@@ -127,19 +200,22 @@
     <DataTable table$aria-label="Waiver and free agent pickups">
         <Head>
             <Row>
-                <Cell class="center">Manager</Cell>
-                <Cell class="center wrappable">Seasons</Cell>
-                <Cell class="center wrappable">Career</Cell>
-                <Cell class="center wrappable">Waiver claims</Cell>
-                <Cell class="center wrappable">FA adds</Cell>
-                <Cell class="center wrappable">Avg / past season</Cell>
-                <Cell class="center wrappable">Past avg thru wk {txnThrough}</Cell>
-                <Cell class="center wrappable">{currentSeason}</Cell>
-                <Cell class="center wrappable">vs own avg</Cell>
+                <SortHeader label={`Manager`} key="manager" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Seasons`} key="seasons" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Career`} key="career" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Career waiver claims`} key="waiver" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Career FA adds`} key="fa" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Avg / past season`} key="avg" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Past avg thru wk ${txnThrough}`} key="thru" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`${currentSeason}`} key="cur" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`${currentSeason} waiver claims`} key="curWaiver" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`${currentSeason} FA adds`} key="curFA" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`Past avg waiver claims thru wk ${txnThrough}`} key="thruWaiver" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
+                <SortHeader label={`vs own avg`} key="pace" sort={sorts.pickups} onsort={(k) => setSort('pickups', k)} />
             </Row>
         </Head>
         <Body>
-            {#each pickups as row (row.managerID)}
+            {#each sortedPickups as row (row.managerID)}
                 <Row class="contrastRow">
                     <Cell>
                         <div class="manager" class:clickable={!row.former} onclick={() => !row.former && gotoManager({leagueTeamManagers, managerID: row.managerID})}>
@@ -157,6 +233,9 @@
                     <Cell class="center">{fmt(row.histAvgFull)}</Cell>
                     <Cell class="center">{fmt(row.histAvgThru)}</Cell>
                     <Cell class="center">{row.thisSeason ?? '-'}</Cell>
+                    <Cell class="center">{row.byKind.waiver.thisSeason ?? '-'}</Cell>
+                    <Cell class="center">{row.byKind.free_agent.thisSeason ?? '-'}</Cell>
+                    <Cell class="center">{fmt(row.byKind.waiver.histAvgThru)}</Cell>
                     <Cell class="center {row.pace == null ? '' : row.pace >= 0 ? 'up' : 'down'}">{pace(row.pace)}</Cell>
                 </Row>
             {/each}
@@ -164,8 +243,51 @@
     </DataTable>
 </div>
 <p class="note">
-    Drop-only moves, failed claims and commissioner moves aren't counted. "vs own avg" compares this season
-    so far to the same manager's past seasons through week {txnThrough}.
+    Drop-only moves, failed claims and commissioner moves aren't counted. "vs own avg" compares this season's
+    waiver claims and free-agent adds combined to the same manager's past seasons through week {txnThrough}.
+</p>
+
+<h3>FAAB spending</h3>
+<div class="statsTable">
+    <DataTable table$aria-label="FAAB spending and points per dollar">
+        <Head>
+            <Row>
+                <SortHeader label={`Manager`} key="manager" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`${currentSeason} spent`} key="spent" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`Avg spent / past season`} key="avg" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`Past avg thru wk ${txnThrough}`} key="thru" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`vs own avg`} key="pace" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`${currentSeason} waiver pts`} key="wpts" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+                <SortHeader label={`Pts per $`} key="ppd" sort={sorts.faab} onsort={(k) => setSort('faab', k)} />
+            </Row>
+        </Head>
+        <Body>
+            {#each sortedFaab as row (row.managerID)}
+                <Row class="contrastRow">
+                    <Cell>
+                        <div class="manager" class:clickable={!row.former} onclick={() => !row.former && gotoManager({leagueTeamManagers, managerID: row.managerID})}>
+                            {#if row.avatar}<img alt="manager avatar" class="avatar" src={row.avatar} />{/if}
+                            <div>
+                                {row.name}
+                                {#if row.former}<div class="former">former manager</div>{/if}
+                            </div>
+                        </div>
+                    </Cell>
+                    <Cell class="center bold">{money(row.faab.thisSeason)}</Cell>
+                    <Cell class="center">{money(row.faab.histAvgFull, 1)}</Cell>
+                    <Cell class="center">{money(row.faab.histAvgThru, 1)}</Cell>
+                    <Cell class="center {row.faab.pace == null ? '' : row.faab.pace >= 0 ? 'up' : 'down'}">{pace(row.faab.pace)}</Cell>
+                    <Cell class="center">{fmt(row.faab.waiverPoints)}</Cell>
+                    <Cell class="center bold">{fmt(row.faab.pointsPerDollar, 2)}</Cell>
+                </Row>
+            {/each}
+        </Body>
+    </DataTable>
+</div>
+<p class="note">
+    FAAB dollars are the winning bids on waiver claims; free-agent adds cost nothing. Points per $ is this season's
+    starter points from waiver-acquired players divided by the FAAB spent on all of this season's claims, including
+    players who never started or were later dropped. It's blank for managers who haven't spent anything. A season's spend can top $100 when a manager was traded extra FAAB.
 </p>
 
 <!-- ============================== TRADES ============================== -->
@@ -175,17 +297,17 @@
     <DataTable table$aria-label="Trades">
         <Head>
             <Row>
-                <Cell class="center">Manager</Cell>
-                <Cell class="center wrappable">Seasons</Cell>
-                <Cell class="center wrappable">Career</Cell>
-                <Cell class="center wrappable">Avg / past season</Cell>
-                <Cell class="center wrappable">Past avg thru wk {txnThrough}</Cell>
-                <Cell class="center wrappable">{currentSeason}</Cell>
-                <Cell class="center wrappable">vs own avg</Cell>
+                <SortHeader label={`Manager`} key="manager" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`Seasons`} key="seasons" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`Career`} key="career" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`Avg / past season`} key="avg" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`Past avg thru wk ${txnThrough}`} key="thru" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`${currentSeason}`} key="cur" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
+                <SortHeader label={`vs own avg`} key="pace" sort={sorts.trades} onsort={(k) => setSort('trades', k)} />
             </Row>
         </Head>
         <Body>
-            {#each trades as row (row.managerID)}
+            {#each sortedTrades as row (row.managerID)}
                 <Row class="contrastRow">
                     <Cell>
                         <div class="manager" class:clickable={!row.former} onclick={() => !row.former && gotoManager({leagueTeamManagers, managerID: row.managerID})}>
@@ -220,21 +342,21 @@
     <div class="statsTable">
         <DataTable table$aria-label="Starter points by acquisition source">
             <Head>
-                <Row>
-                    <Cell class="center">Team</Cell>
-                    <Cell class="center wrappable">Draft</Cell>
-                    <Cell class="center wrappable">Waiver</Cell>
-                    <Cell class="center wrappable">Free agent</Cell>
-                    <Cell class="center wrappable">Trade</Cell>
-                    <Cell class="center wrappable">Other</Cell>
-                    <Cell class="center wrappable">Total</Cell>
-                    <Cell class="center wrappable">Draft %</Cell>
-                    <Cell class="center wrappable">Waiver + FA %</Cell>
-                    <Cell class="center wrappable">Trade %</Cell>
-                </Row>
-            </Head>
+            <Row>
+                <SortHeader label={`Team`} key="team" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Draft`} key="draft" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Waiver`} key="waiver" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Free agent`} key="free_agent" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Trade`} key="trade" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Other`} key="other" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Total`} key="total" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Draft %`} key="draftPct" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Waiver + FA %`} key="waiverFAPct" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+                <SortHeader label={`Trade %`} key="tradePct" sort={sorts.points} onsort={(k) => setSort('points', k)} />
+            </Row>
+        </Head>
             <Body>
-                {#each points as row (row.rosterID)}
+                {#each sortedPoints as row (row.rosterID)}
                     {@const team = getTeamFromTeamManagers(leagueTeamManagers, row.rosterID)}
                     <Row class="contrastRow">
                         <Cell>
@@ -265,15 +387,15 @@
     <div class="statsTable">
         <DataTable table$aria-label="Best player per acquisition source">
             <Head>
-                <Row>
-                    <Cell class="center">Team</Cell>
-                    <Cell class="center wrappable">Draft</Cell>
-                    <Cell class="center wrappable">Waiver / FA</Cell>
-                    <Cell class="center wrappable">Trade</Cell>
-                </Row>
-            </Head>
+            <Row>
+                <SortHeader label={`Team`} key="team" sort={sorts.best} onsort={(k) => setSort('best', k)} />
+                <SortHeader label={`Draft`} key="draft" sort={sorts.best} onsort={(k) => setSort('best', k)} />
+                <SortHeader label={`Waiver / FA`} key="waiverFA" sort={sorts.best} onsort={(k) => setSort('best', k)} />
+                <SortHeader label={`Trade`} key="trade" sort={sorts.best} onsort={(k) => setSort('best', k)} />
+            </Row>
+        </Head>
             <Body>
-                {#each points as row (row.rosterID)}
+                {#each sortedBest as row (row.rosterID)}
                     {@const team = getTeamFromTeamManagers(leagueTeamManagers, row.rosterID)}
                     <Row class="contrastRow">
                         <Cell>
