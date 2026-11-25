@@ -85,7 +85,9 @@ const checkPreview = (preview, passedTransactions) => {
 	return passedTransactions;
 }
 
-const combThroughTransactions = async (week, currentLeagueID) => {
+// Exported so other helpers (e.g. managerStats) can reuse the league-chain walk and raw transaction fetch.
+// Each returned transaction is tagged with the `league_id` it came from.
+export const combThroughTransactions = async (week, currentLeagueID) => {
 	week = week > 0 ? week : 1;
 	
 	const leagueIDs = [];
@@ -105,10 +107,12 @@ const combThroughTransactions = async (week, currentLeagueID) => {
 	}
 
 	const transactionPromises = [];
+	const promiseLeagueIDs = [];
 
 	for(const singleLeagueID of leagueIDs) {
 		while(week > 0) {
 			transactionPromises.push(fetch(`https://api.sleeper.app/v1/league/${singleLeagueID}/transactions/${week}`, {compress: true}));
+			promiseLeagueIDs.push(singleLeagueID);
 			week--;
 		}
 		week = 18;
@@ -117,24 +121,33 @@ const combThroughTransactions = async (week, currentLeagueID) => {
 	const transactionRess = await waitForAll(...transactionPromises).catch((err) => { console.error(err); });
 
 	const transactionDataPromises = [];
+	const dataLeagueIDs = [];
 	
-	for(const transactionRes of transactionRess) {
+	for(let i = 0; i < transactionRess.length; i++) {
+			const transactionRes = transactionRess[i];
 			if (transactionRes == null || !transactionRes.ok) {
                 console.error(transactionRes);
                 continue;
 			}
 			transactionDataPromises.push(transactionRes.json());
+			dataLeagueIDs.push(promiseLeagueIDs[i]);
 	}
 
 	const transactionsDataJson = await waitForAll(...transactionDataPromises).catch((err) => { console.error(err); });
 
 	let transactionsData = [];
 
-	for(const transactionDataJson of transactionsDataJson) {
+	for(let i = 0; i < transactionsDataJson.length; i++) {
+		const transactionDataJson = transactionsDataJson[i];
+		if(Array.isArray(transactionDataJson)) {
+			for(const transaction of transactionDataJson) {
+				if(transaction) transaction.league_id = dataLeagueIDs[i];
+			}
+		}
 		transactionsData = transactionsData.concat(transactionDataJson);
 	}
 
-	return {transactionsData, currentSeason};
+	return {transactionsData, currentSeason, leagueIDs};
 }
 
 const digestTransactions = async ({transactionsData, currentSeason}) => {

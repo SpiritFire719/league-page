@@ -78,6 +78,11 @@ export const tabs = [
                 dest: '/records',
             },
             {
+                icon: 'insights',
+                label: 'Manager Stats',
+                dest: '/manager-stats',
+            },
+            {
                 icon: 'history_edu',
                 label: 'Constitution',
                 dest: '/constitution',

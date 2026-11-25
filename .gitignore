@@ -9,3 +9,5 @@ static/smui.css
 build
 .vercel_build_output
 .claude
+.sleeper-cache
+sleeper-manager-stats.json
